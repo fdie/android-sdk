@@ -27,17 +27,17 @@ public final class Utils {
      *
      * @throws InvalidParameterException If value if not between 0 and 15.
      */
-    public static final byte greyLevel(int value) {
+    public static byte greyLevel(int value) {
         Utils.constraints(value, 0, 15);
         return (byte) (value & 0xFF);
     }
 
-    public static final short toSignedCoordinate(int value) {
+    public static short toSignedCoordinate(int value) {
         Utils.constraints(value, -512, 512);
         return (short) value;
     }
 
-    public static final Rotation toRotation(byte value) {
+    public static Rotation toRotation(byte value) {
         switch (value) {
             case 0x00:
                 return Rotation.BOTTOM_RL;

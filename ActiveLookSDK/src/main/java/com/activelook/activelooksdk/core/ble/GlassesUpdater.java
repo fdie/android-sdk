@@ -4,7 +4,6 @@ import android.content.Context;
 import android.util.Pair;
 
 import androidx.core.util.Consumer;
-import androidx.core.util.Predicate;
 
 import com.activelook.activelooksdk.DiscoveredGlasses;
 import com.activelook.activelooksdk.Glasses;

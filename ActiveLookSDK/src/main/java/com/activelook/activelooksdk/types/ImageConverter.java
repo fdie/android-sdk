@@ -21,11 +21,19 @@ public class ImageConverter {
                 byte[] encodedImg = getCmd4Bpp(matrix);
                 byte[] cmds = getCmdCompress4BppHeatshrink(encodedImg);
                 return new ImageData(width,cmds, encodedImg.length);
+            case RG_COLOR_8BPP:
+                byte[] raw = new byte[width * matrix.length];
+                int i = 0;
+                for (int[] row : matrix) for (int px : row) raw[i++] = (byte) px;
+                byte[] compressed = getCmdCompress4BppHeatshrink(raw);
+                return new ImageData(width, compressed, raw.length);
             default:
                 Log.d("imageFormat", "Unknown format");
         }
         return new ImageData();
     }
+
+
 
     public static Image1bppData getImage1bppData(Bitmap img, ImgSaveFormat fmt) {
         int[][] matrix = convert(img, fmt);
@@ -75,6 +83,7 @@ public class ImageConverter {
                 return ImageMDP05.convert1Bpp(img);
             case MONO_4BPP:case MONO_4BPP_HEATSHRINK:case MONO_4BPP_HEATSHRINK_SAVE_COMP:
                 return ImageMDP05.convertDefault(img);
+
             default:
                 Log.d("imageConvert", "Unknown format");
         }
@@ -184,7 +193,7 @@ public class ImageConverter {
         return  arraySize;
     }
 
-    private static byte[] getCmdCompress4BppHeatshrink(byte[] encodedImg){
+    public static byte[] getCmdCompress4BppHeatshrink(byte[] encodedImg){
         int windowSize = 8;
         int lookaheadSize = 4;
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

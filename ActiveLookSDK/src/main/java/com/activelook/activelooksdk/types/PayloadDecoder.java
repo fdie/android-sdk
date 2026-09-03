@@ -24,24 +24,24 @@ final class PayloadDecoder {
         this.offset = 0;
     }
 
-    final boolean hasNext() {
+    boolean hasNext() {
         return this.offset < this.bytes.length;
     }
 
-    final byte readByte() {
+    byte readByte() {
         return this.bytes[this.offset++];
     }
 
-    final byte readByte(final int offset) {
+    byte readByte(final int offset) {
         this.offset = offset;
         return this.readByte();
     }
 
-    final long readLong() {
+    long readLong() {
         return this.readLong(8);
     }
 
-    final long readLong(final int size) {
+    long readLong(final int size) {
         long result = 0l;
         final int end = size + this.offset;
         while (this.offset < end) {
@@ -51,56 +51,56 @@ final class PayloadDecoder {
         return result;
     }
 
-    final long readLong(final int offset, final int size) {
+    long readLong(final int offset, final int size) {
         this.offset = offset;
         return this.readLong(size);
     }
 
-    final char readChar() {
+    char readChar() {
         return (char) this.readLong(2);
     }
 
-    final char readChar(final int size) {
+    char readChar(final int size) {
         return (char) this.readLong(size);
     }
 
-    final char readChar(final int offset, final int size) {
+    char readChar(final int offset, final int size) {
         return (char) this.readLong(offset, size);
     }
 
-    final short readShort() {
+    short readShort() {
         return (short) this.readLong(2);
     }
 
-    final short readShort(final int size) {
+    short readShort(final int size) {
         return (short) this.readLong(size);
     }
 
-    final short readShort(final int offset, final int size) {
+    short readShort(final int offset, final int size) {
         return (short) this.readLong(offset, size);
     }
 
-    final int readUInt() {
+    int readUInt() {
         return (int) this.readLong(4);
     }
 
-    final int readUInt(final int size) {
+    int readUInt(final int size) {
         return (int) this.readLong(size);
     }
 
-    final int readUInt(final int offset, final int size) {
+    int readUInt(final int offset, final int size) {
         return (int) this.readLong(offset, size);
     }
 
-    final boolean readBoolean() {
+    boolean readBoolean() {
         return this.readLong(1) != 0;
     }
 
-    final boolean readBoolean(final int size) {
+    boolean readBoolean(final int size) {
         return this.readLong(size) != 0;
     }
 
-    final boolean readBoolean(final int offset, final int size) {
+    boolean readBoolean(final int offset, final int size) {
         return this.readLong(offset, size) != 0;
     }
 

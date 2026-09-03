@@ -45,19 +45,19 @@ public class Command {
         this.commandId = commandId;
         this.queryId = queryId;
     }
+    public byte getCommandId() {
+        return this.commandId;
+    }
 
     public Command(byte[] payload) {
         super();
-        int fullLength = 5;
+        int fullLength = getFullLength(payload);
         assert payload[0] == (byte) 0xFF;
         this.commandId = payload[1];
         int n = payload[2] & (byte) 0x0F;
         int offset = 4;
         if ((payload[2] & 0x10) == 0x10) {
-            fullLength = CommandData.UInt16.asInt(payload[3], payload[4]);
             offset++;
-        } else {
-            fullLength = CommandData.UInt8.asShort(payload[3]);
         }
         int m = fullLength - (1 + n + offset);
         if (n > 0) {
@@ -75,19 +75,25 @@ public class Command {
 
     public static final boolean isValidBuffer(byte[] payload) {
         Log.d("Validating", Command.bytesToStr(payload));
-        int fullLength = 5;
-        assert payload[0] == (byte) 0xFF;
+        if (payload.length < 5) return false;
+        int fullLength;
         if ((payload[2] & 0x10) == 0x10) {
+            if (payload.length < 5) return false;
             fullLength = CommandData.UInt16.asInt(payload[3], payload[4]);
         } else {
             fullLength = CommandData.UInt8.asShort(payload[3]);
         }
-        Log.d("Validating", String.format("payload.length %d == fullLength %d", payload.length, fullLength));
-        if (payload.length == fullLength) {
-            assert payload[fullLength - 1] == (byte) 0xAA;
-            return true;
+        return payload.length >= fullLength;
+    }
+
+    public static final int getFullLength(byte[] payload) {
+        assert payload.length >= 4 : "Buffer too short to read header";
+        assert payload[0] == (byte) 0xFF;
+        if ((payload[2] & 0x10) == 0x10) {
+            assert payload.length >= 5 : "Buffer too short to read extended length";
+            return CommandData.UInt16.asInt(payload[3], payload[4]);
         } else {
-            return false;
+            return CommandData.UInt8.asShort(payload[3]);
         }
     }
 

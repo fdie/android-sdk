@@ -33,6 +33,7 @@ import com.activelook.internal.SimpleSerializedGlasses;
 
 class GlassesImpl extends AbstractGlasses implements Glasses {
 
+
     public static final Creator<GlassesImpl> CREATOR = new Creator<GlassesImpl>() {
         @Override
         public GlassesImpl createFromParcel(Parcel source) {
@@ -91,7 +92,18 @@ class GlassesImpl extends AbstractGlasses implements Glasses {
 
     @Override
     public void writeBytes(byte[] bytes) {
-        this.gattCallbacks.writeRxCharacteristic(bytes);
+        this.gattCallbacks.writeRxCharacteristic(
+                bytes,
+                null);
+    }
+
+    public void writeBytes(byte[] bytes, boolean withResponse) {
+        this.gattCallbacks.writeRxCharacteristic(
+                bytes,
+                null,
+                withResponse
+                        ? BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                        : BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
     }
 
     @Override
@@ -149,8 +161,8 @@ class GlassesImpl extends AbstractGlasses implements Glasses {
         final String gVersion = this.getDeviceInformation().getFirmwareVersion();
 
         Log.w("isFirmwareAtLeast", String.format(
-            "glasses: [%s], argument: [%s] = %d",
-            gVersion, version, compareFirmwareVersions(gVersion, version)));
+                "glasses: [%s], argument: [%s] = %d",
+                gVersion, version, compareFirmwareVersions(gVersion, version)));
         return compareFirmwareVersions(gVersion, version) >= 0;
     }
 
@@ -182,7 +194,7 @@ class GlassesImpl extends AbstractGlasses implements Glasses {
     }
 
     @Override
-    public void isWriteWithResponse(boolean on) {
+    public void setWriteWithResponse(boolean on) {
         if(on){
             this.gattCallbacks.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         }else {

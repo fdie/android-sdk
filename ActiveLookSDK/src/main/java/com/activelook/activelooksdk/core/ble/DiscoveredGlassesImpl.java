@@ -58,7 +58,7 @@ class DiscoveredGlassesImpl implements DiscoveredGlasses {
         }
     }
 
-    private static final Map<Integer, byte[]> mapRecord(byte[] scanRecord) {
+    private static Map<Integer, byte[]> mapRecord(byte[] scanRecord) {
         Map<Integer, byte[]> ret = new HashMap<>();
         int index = 0;
         while (index < scanRecord.length) {
@@ -72,7 +72,7 @@ class DiscoveredGlassesImpl implements DiscoveredGlasses {
         return ret;
     }
 
-    private static final String recordToHex(byte[] data) {
+    private static String recordToHex(byte[] data) {
         if (data.length == 0) {
             return "";
         }

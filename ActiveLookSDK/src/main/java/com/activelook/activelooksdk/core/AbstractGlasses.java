@@ -58,6 +58,7 @@ public abstract class AbstractGlasses implements Glasses {
     static final byte ID_power = (byte) 0x00;
     static final byte ID_clear = (byte) 0x01;
     static final byte ID_grey = (byte) 0x02;
+    static final byte ID_grayscale = (byte) 0x30;
     static final byte ID_demo = (byte) 0x03;
     static final byte ID_test = (byte) 0x04;
     static final byte ID_battery = (byte) 0x05;
@@ -65,6 +66,8 @@ public abstract class AbstractGlasses implements Glasses {
     static final byte ID_led = (byte) 0x08;
     static final byte ID_shift = (byte) 0x09;
     static final byte ID_settings = (byte) 0x0A;
+    static final byte ID_error = (byte) 0xE2;
+
     /*
      * Display luminance commands ids
      */
@@ -78,7 +81,7 @@ public abstract class AbstractGlasses implements Glasses {
     /*
      * Graphics commands ids
      */
-    static final byte ID_color = (byte) 0x30;
+    static final byte ID_color = (byte) 0x3D;
     static final byte ID_point = (byte) 0x31;
     static final byte ID_line = (byte) 0x32;
     static final byte ID_rect = (byte) 0x33;
@@ -86,6 +89,7 @@ public abstract class AbstractGlasses implements Glasses {
     static final byte ID_circ = (byte) 0x35;
     static final byte ID_circf = (byte) 0x36;
     static final byte ID_txt = (byte) 0x37;
+    static final byte ID_txtColor = (byte) 0x3E;
     static final byte ID_polyline = (byte) 0x38;
     static final byte ID_holdFlush = (byte) 0x39;
     /*
@@ -175,6 +179,10 @@ public abstract class AbstractGlasses implements Glasses {
     static final byte ID_shutdown = (byte) 0xE0;
     private final HashMap<QueryId, Consumer<byte[]>> callbacks;
     private QueryId currentQID;
+    private boolean useQueryId = false;
+    public void setUseQueryId(boolean useQueryId) {
+        this.useQueryId = useQueryId;
+    }
 
     /*
     Methods for children implementation
@@ -187,11 +195,18 @@ public abstract class AbstractGlasses implements Glasses {
     protected void writeBytes(byte[] bytes) {
     }
 
+    protected void writeBytes(byte[] bytes,boolean writeType) {
+    }
+
     protected final void delegateToCallback(final Command command) {
         final QueryId qid = command.getQueryId();
         if (qid != null) {
             final Consumer<byte[]> callback = this.callbacks.remove(qid);
             if (callback != null) {
+                if (command.getCommandId() == ID_error) {
+                    Log.e("AbstractGlasses", "Command failed: " + Command.bytesToStr(command.getData()));
+                    return; // c'est un message d'erreur, pas la réponse attendue : on ne le donne pas au parseur
+                }
                 callback.accept(command.getData());
             }
         }
@@ -211,17 +226,38 @@ public abstract class AbstractGlasses implements Glasses {
     }
 
     private void writeCommand(final Command command) {
-        final QueryId qid = this.nextQueryId();
-        command.setQueryId(qid);
+        if (this.useQueryId) {
+            final QueryId qid = this.nextQueryId();
+            command.setQueryId(qid);
+        }
         this.writeBytes(command.toBytes());
     }
 
     private void writeCommand(final Command command, final Consumer<byte[]> callback) {
-        QueryId qid = this.nextQueryId();
-        command.setQueryId(qid);
-        this.registerCallback(qid, callback);
+        if (this.useQueryId) {
+            QueryId qid = this.nextQueryId();
+            command.setQueryId(qid);
+            this.registerCallback(qid, callback);
+        } else {
+            Log.w("AbstractGlasses", "Callback registered but useQueryId=false: it will never fire.");
+        }
         this.writeBytes(command.toBytes());
     }
+
+//    private void writeCommand(final Command command, boolean writeType) {
+//        final QueryId qid = this.nextQueryId();
+//        command.setQueryId(qid);
+//        this.writeBytes(command.toBytes(),writeType);
+//    }
+
+//    private void writeCommand(final Command command, final Consumer<byte[]> callback, boolean writeType) {
+//        QueryId qid = this.nextQueryId();
+//        command.setQueryId(qid);
+//        this.registerCallback(qid, callback);
+//        this.writeBytes(command.toBytes(),writeType);
+//    }
+
+
 
     /*
     Public defaults
@@ -250,6 +286,14 @@ public abstract class AbstractGlasses implements Glasses {
         final CommandData data = CommandData.fromGreyLevel(level);
         this.writeCommand(new Command(ID_grey, data));
     }
+
+    @Override
+    public void grayscale(final byte level) {
+        final CommandData data = CommandData.fromGreyLevel(level);
+        this.writeCommand(new Command(ID_grayscale, data));
+    }
+
+
 
     @Override
     public void demo() {
@@ -330,7 +374,7 @@ public abstract class AbstractGlasses implements Glasses {
 
     @Override
     public void color(final byte value) {
-        final CommandData data = CommandData.fromGreyLevel(value);
+        final CommandData data = CommandData.fromColorLevel(value);
         this.writeCommand(new Command(ID_color, data));
     }
 
@@ -377,8 +421,9 @@ public abstract class AbstractGlasses implements Glasses {
                 .add(CommandData.fromRotation(r))
                 .addUInt8(f, c)
                 .addNulTerminatedStrings(s);
-        this.writeCommand(new Command(ID_txt, data));
+        this.writeCommand(new Command((isColorCapable() ? ID_txtColor : ID_txt), data));
     }
+
 
     @Override
     public void polyline(final short[] points) {
@@ -439,11 +484,16 @@ public abstract class AbstractGlasses implements Glasses {
             case MONO_4BPP_HEATSHRINK_SAVE_COMP:
                 this.imgSave4bppHeatShrinkSaveComp(id, image);
             break;
+            case RG_COLOR_8BPP:
+                this.imgSaveRGColor8bpp(id, image);
+            break;
+
         }
     }
 
+
     // TODO @Override
-    public void imgSave4bpp(final byte id, final int width, final int size, final byte[] bytes, final ImgSaveFormat format) {
+    public void imgSave(final byte id, final int width, final int size, final byte[] bytes, final ImgSaveFormat format) {
         final CommandData data = new CommandData()
                 .addUInt8(id)
                 .addUInt32(size)
@@ -459,21 +509,27 @@ public abstract class AbstractGlasses implements Glasses {
     public void imgSave4bpp(final byte id, final Bitmap image){
         final ImgSaveFormat format = ImgSaveFormat.MONO_4BPP;
         final ImageData imgData = ImageConverter.getImageData(image, format);
-        this.imgSave4bpp(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
+        this.imgSave(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
     }
+    public void imgSaveRGColor8bpp(final byte id, final Bitmap image){
+        final ImgSaveFormat format = ImgSaveFormat.RG_COLOR_8BPP;
+        final ImageData imgData = ImageConverter.getImageData(image, format);
+        this.imgSave(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
+    }
+
 
     @Override
     public void imgSave4bppHeatShrink(final byte id, final Bitmap image){
         final ImgSaveFormat format = ImgSaveFormat.MONO_4BPP_HEATSHRINK;
         final ImageData imgData = ImageConverter.getImageData(image, format);
-        this.imgSave4bpp(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
+        this.imgSave(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
     }
 
     @Override
     public void imgSave4bppHeatShrinkSaveComp(final byte id, final Bitmap image){
         final ImgSaveFormat format = ImgSaveFormat.MONO_4BPP_HEATSHRINK_SAVE_COMP;
         final ImageData imgData = ImageConverter.getImageData(image, format);
-        this.imgSave4bpp(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
+        this.imgSave(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
     }
 
     // TODO @Override
@@ -510,7 +566,10 @@ public abstract class AbstractGlasses implements Glasses {
         final Image1bppData imgData = ImageConverter.getImage1bppData(image, format);
         this.imgSave1bpp(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
     }
-
+    @Override
+    public void imgSave(final byte id, final ImageData imgData, final ImgSaveFormat format) {
+        this.imgSave(id, imgData.getWidth(), imgData.getSize(), imgData.getBytes(), format);
+    }
     @Override
     public void imgDisplay(final byte id, final short x, final short y) {
         final CommandData data = new CommandData().addUInt8(id).addInt16(x, y);

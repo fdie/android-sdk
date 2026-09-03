@@ -122,7 +122,7 @@ public class Payload {
      * @param data:      Can be null. Parameters of the command
      * @return the byte buffer to write
      */
-    private static final byte[] getBytes(byte commandId, byte[] queryId, byte[] data) {
+    private static byte[] getBytes(byte commandId, byte[] queryId, byte[] data) {
         int n = queryId.length;
         int m = data.length;
         assert n <= 15 : String.format("QueryId length too big: %d > 15", n);
@@ -152,7 +152,7 @@ public class Payload {
         return payload;
     }
 
-    private static final byte[] getBytesWithData(byte commandId, byte[] data) {
+    private static byte[] getBytesWithData(byte commandId, byte[] data) {
         int m = data.length;
         assert m <= 512 : String.format("Data length too big: %d > 512", m);
         int fullLength = 5 + m;
@@ -178,7 +178,7 @@ public class Payload {
         return payload;
     }
 
-    private static final byte[] getBytesWithQueryId(byte commandId, byte[] queryId) {
+    private static byte[] getBytesWithQueryId(byte commandId, byte[] queryId) {
         int n = queryId.length;
         assert n <= 15 : String.format("QueryId length too big: %d > 15", n);
         int fullLength = 5 + n;
@@ -194,7 +194,7 @@ public class Payload {
         return payload;
     }
 
-    private static final byte[] combine(byte[]... parameters) {
+    private static byte[] combine(byte[]... parameters) {
         int fullLength = 0;
         for (byte[] parameter : parameters) {
             fullLength += parameter.length;
@@ -208,7 +208,7 @@ public class Payload {
         return result;
     }
 
-    private static final byte[] getBytes(byte commandId) {
+    private static byte[] getBytes(byte commandId) {
         return new byte[]{(byte) 0xFF, commandId, (byte) 0x00, (byte) 0x05, (byte) 0xAA};
     }
 
