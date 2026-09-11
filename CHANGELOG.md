@@ -1,5 +1,33 @@
 # CHANGELOG
 
+
+## Version 4.6.0
+
+### Features
+
+New: Color display support
+- Added Glasses.isColorCapable() — detects whether connected glasses have a color display (MDP08) vs. grey-level (MDP05), based on hardware version.
+- Added ImgSaveFormat.RG_COLOR_8BPP — new image save format for 8bpp RG (red-green) color images, color glasses only.
+- Added Glasses.imgSave(byte id, ImageData imgData, ImgSaveFormat format) — save a pre-encoded image directly, without requiring a Bitmap.
+- Added Glasses.grayscale(byte level) and Glasses.color(byte value) — color() now sends the correct red-green color command (0x3D) instead of reusing the grey-level command; text can now be drawn in color via the new txtColor command (automatically used by txt() when isColorCapable() is true).
+- ImageConverter.getCmdCompress4BppHeatshrink() is now public, enabling custom image-encoding pipelines outside the SDK.
+
+Breaking changes
+- Glasses.isWriteWithResponse(boolean) renamed to Glasses.setWriteWithResponse(boolean). Update any calls to the old method name.
+- Command IDs for grayscale/color/txtColor were remapped to match the current firmware protocol (grayscale=0x30, color=0x3D, txtColor=0x3E) — no app-level action needed unless you referenced these IDs directly.
+
+### Fixes
+
+- Fixed BLE notification reassembly: a single characteristic-changed event containing multiple back-to-back commands is now parsed correctly instead of stalling on the first one.
+- Fixed a thread leak in the flow-control repair timer (ScheduledExecutorService is now properly shut down after use).
+- Write batching (unstackWriteRxCharacteristicLoop) now tracks write type per pending write, so retried/rolled-back batches preserve their original with/without-response setting.
+
+### Internal
+
+Refactored the RX-characteristic write-batching logic into smaller, testable pieces (collectBatch, buildPayload, writeToGatt, handleWriteFailure).
+Minor logging cleanup in UpdateGlassesTask (onApiFail, onApiJSONException).
+Removed dead code / unused imports across several files.
+
 ## Version 4.5.9
 
 ### Fixes
