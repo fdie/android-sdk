@@ -39,4 +39,12 @@ package com.activelook.activelooksdk.types;
             return new byte[]{(byte) 0x03};
         }
     },
+     RG_COLOR_8BPP {
+         @Override
+         public byte[] toBytes() {
+             return new byte[]{(byte) 0x0A};
+         }
+     },
+
+
 }

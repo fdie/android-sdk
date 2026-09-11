@@ -26,7 +26,7 @@ public final class BleSdkSingleton {
 
     private static SdkImpl singleton;
 
-    public static final synchronized SdkImpl init(Context applicationContext,
+    public static synchronized SdkImpl init(Context applicationContext,
                                                   String token,
                                                   Consumer<GlassesUpdate> onUpdateStart,
                                                   Consumer<Pair<GlassesUpdate, Runnable>> onUpdateAvailableCallback,
@@ -40,7 +40,7 @@ public final class BleSdkSingleton {
         return BleSdkSingleton.singleton;
     }
 
-    public static final synchronized SdkImpl getInstance() {
+    public static synchronized SdkImpl getInstance() {
         return BleSdkSingleton.singleton;
     }
 

@@ -29,7 +29,7 @@ final class SdkSingleton {
 
     private static Sdk singleton;
 
-    static final synchronized Sdk init(Context applicationContext,
+    static synchronized Sdk init(Context applicationContext,
                                        String token,
                                        Consumer<GlassesUpdate> onUpdateStart,
                                        Consumer<Pair<GlassesUpdate, Runnable>> onUpdateAvailableCallback,
@@ -51,7 +51,7 @@ final class SdkSingleton {
         return SdkSingleton.singleton;
     }
 
-    static final synchronized Sdk getInstance() {
+    static synchronized Sdk getInstance() {
         return SdkSingleton.singleton;
     }
 

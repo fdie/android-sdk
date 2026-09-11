@@ -124,7 +124,7 @@ class GlassesImpl extends AbstractGlasses implements Glasses {
     }
 
     @Override
-    public void isWriteWithResponse(boolean on) {
+    public void setWriteWithResponse(boolean on) {
     }
 
     @Override

@@ -35,7 +35,7 @@ public final class FontInfo {
         return this.height;
     }
 
-    public static final List<FontInfo> toList(byte[] bytes) {
+    public static List<FontInfo> toList(byte[] bytes) {
         final ArrayList<FontInfo> result = new ArrayList<>();
         final PayloadDecoder rp = new PayloadDecoder(bytes);
         while (rp.hasNext()) {

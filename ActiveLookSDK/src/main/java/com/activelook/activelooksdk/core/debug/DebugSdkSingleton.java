@@ -18,7 +18,7 @@ public final class DebugSdkSingleton {
 
     private static SdkImpl singleton;
 
-    public static final synchronized SdkImpl getInstance() {
+    public static synchronized SdkImpl getInstance() {
         if (DebugSdkSingleton.singleton == null) {
             DebugSdkSingleton.singleton = new SdkImpl();
         }

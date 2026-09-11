@@ -257,6 +257,10 @@ public final class CommandData {
         return new CommandData(level);
     }
 
+    public static CommandData fromColorLevel(final byte level) {
+        return new CommandData(level);
+    }
+
     public static CommandData fromDemoPattern(final DemoPattern pattern) {
         assert pattern != null : String.format(Locale.US, "Pattern cannot be null");
         switch (pattern) {
@@ -285,6 +289,7 @@ public final class CommandData {
             case MONO_1BPP:                         return new CommandData((byte) 0x01);
             case MONO_4BPP_HEATSHRINK:              return new CommandData((byte) 0x02);
             case MONO_4BPP_HEATSHRINK_SAVE_COMP:    return new CommandData((byte) 0x03);
+            case RG_COLOR_8BPP:                     return new CommandData((byte) 0x0A);
             default:                                return new CommandData((byte) 0x04);
         }
     }

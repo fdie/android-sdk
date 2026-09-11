@@ -16,8 +16,7 @@ package com.activelook.activelooksdk.types;
 
 import com.activelook.activelooksdk.core.Payload;
 
-import java.util.ArrayList;
-import java.util.List;
+
 
 public class PageInfo {
 

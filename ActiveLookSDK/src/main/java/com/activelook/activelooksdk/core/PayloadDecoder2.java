@@ -11,7 +11,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-*/
+*//*
+
 package com.activelook.activelooksdk.core;
 
 import com.activelook.activelooksdk.types.GlassesSettings;
@@ -47,9 +48,11 @@ public final class PayloadDecoder2 {
         );
     }
 
-    /*
+    */
+/*
     HELPERS FOR DECODING RECEIVED PAYLOADS
-     */
+     *//*
+
     private final byte [] bytes;
     private int offset;
 
@@ -139,3 +142,4 @@ public final class PayloadDecoder2 {
     }
 
 }
+*/

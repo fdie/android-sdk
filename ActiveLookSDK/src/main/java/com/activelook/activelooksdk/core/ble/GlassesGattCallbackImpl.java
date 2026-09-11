@@ -32,9 +32,9 @@ import com.activelook.activelooksdk.types.FlowControlStatus;
 import com.activelook.activelooksdk.types.Utils;
 
 import java.nio.charset.StandardCharsets;
-import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -45,8 +45,42 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @SuppressLint("MissingPermission")
 class GlassesGattCallbackImpl extends GlassesGatt {
 
+    private static final class PendingWrite {
+        final byte[] bytes;
+        final Consumer<Double> progressCallback;
+        final int writeType;
+
+        PendingWrite(byte[] bytes, Consumer<Double> progressCallback, int writeType) {
+            this.bytes = bytes;
+            this.progressCallback = progressCallback;
+            this.writeType = writeType;
+        }
+    }
+
+    private static final class Batch {
+        final ConcurrentLinkedDeque<PendingWrite> entries;
+        final int size;
+        final int writeType;
+
+        Batch(ConcurrentLinkedDeque<PendingWrite> entries, int size, int writeType) {
+            this.entries = entries;
+            this.size = size;
+            this.writeType = writeType;
+        }
+    }
+
+    private static final class PreparedPayload {
+        final byte[] payload;
+        final List<Runnable> notifiers;
+
+        PreparedPayload(byte[] payload, List<Runnable> notifiers) {
+            this.payload = payload;
+            this.notifiers = notifiers;
+        }
+    }
+
     private final DeviceInformation deviceInfo;
-    private final ConcurrentLinkedDeque<Map.Entry<byte [], Consumer<Double>>> pendingWriteRxCharacteristic;
+    private final ConcurrentLinkedDeque<PendingWrite> pendingWriteRxCharacteristic;
     private final AtomicBoolean flowControlCanSend;
     private final AtomicBoolean isWritingCommand;
     private BluetoothGatt gatt;
@@ -196,16 +230,17 @@ class GlassesGattCallbackImpl extends GlassesGatt {
             if (this.pendingBuffer != null) {
                 this.addPendingBuffer(buffer);
                 buffer = this.pendingBuffer;
-                if (Command.isValidBuffer(buffer)) {
-                    this.pendingBuffer = null;
-                    final Command command = new Command(buffer);
-                    this.glasses.callCallback(command);
-                }
-            } else if (Command.isValidBuffer(buffer)) {
-                final Command command = new Command(buffer);
+                this.pendingBuffer = null;
+            }
+            while (Command.isValidBuffer(buffer)) {
+                int fullLength = Command.getFullLength(buffer);
+                byte[] frame = Arrays.copyOfRange(buffer, 0, fullLength);
+                final Command command = new Command(frame);
                 this.glasses.callCallback(command);
-            } else {
-                this.addPendingBuffer(buffer);
+                buffer = Arrays.copyOfRange(buffer, fullLength, buffer.length);
+            }
+            if (buffer.length > 0) {
+                this.pendingBuffer = buffer;
             }
         } else if (characteristic.getUuid().equals(BleUUID.BatteryLevelCharacteristic)) {
             final int bl = characteristic.getValue()[0];
@@ -240,6 +275,7 @@ class GlassesGattCallbackImpl extends GlassesGatt {
                         GlassesGattCallbackImpl.this.unstackWriteRxCharacteristic();
                     }
                 }, 10000, TimeUnit.MILLISECONDS);
+                executorService.shutdown();
             } else if (this.onFlowControlEvent != null) {
                 if (state == (byte) 0x03) {
                     this.onFlowControlEvent.accept(FlowControlStatus.CMD_ERROR);
@@ -316,7 +352,11 @@ class GlassesGattCallbackImpl extends GlassesGatt {
     }
 
     void writeRxCharacteristic(byte[] bytes, Consumer<Double> progressCallback) {
-        this.pendingWriteRxCharacteristic.add(new AbstractMap.SimpleImmutableEntry<>(bytes, progressCallback));
+        this.writeRxCharacteristic(bytes, progressCallback, this.writeType);
+    }
+
+    void writeRxCharacteristic(byte[] bytes, Consumer<Double> progressCallback, int writeType) {
+        this.pendingWriteRxCharacteristic.add(new PendingWrite(bytes, progressCallback, writeType));
         this.unstackWriteRxCharacteristic();
     }
 
@@ -326,99 +366,137 @@ class GlassesGattCallbackImpl extends GlassesGatt {
         }
     }
 
-    private boolean unstackWriteRxCharacteristicLoop() {
-        if (this.flowControlCanSend.get() && this.pendingWriteRxCharacteristic.size() > 0 && this.isWritingCommand.compareAndSet(false, true)) {
-            final ConcurrentLinkedDeque<Map.Entry<byte[], Consumer<Double>>> stack = new ConcurrentLinkedDeque<>();
-            final int writeMTU = this.mtu - 3;
-            int stackSize = 0;
-            while (stackSize < writeMTU && this.pendingWriteRxCharacteristic.size() > 0) {
-                final Map.Entry<byte[], Consumer<Double>> entry = this.pendingWriteRxCharacteristic.poll();
-                assert entry != null;
-                final byte [] buffer = entry.getKey();
-                if (buffer.length > 0) {
-                    stack.add(entry);
-                    stackSize += buffer.length;
-                }
+    private Batch collectBatch(int writeMTU) {   // sert à compiler les commandes en batch
+        final ConcurrentLinkedDeque<PendingWrite> entries = new ConcurrentLinkedDeque<>();
+        int totalSize = 0;
+        Integer batchWriteType = null;
+        while (totalSize < writeMTU) {
+            final PendingWrite next = this.pendingWriteRxCharacteristic.peekFirst();  // on regarde SANS retirer
+            if (next == null) {
+                break;                                      // plus rien en attente
             }
-            final byte [] payload;
-            Runnable lastNotifier = null;
-            if (stackSize > writeMTU) {
-                payload = new byte [writeMTU];
-                final int sizeOutOfPayload = stackSize - writeMTU;
-                final byte[] remainingBuffer = new byte [sizeOutOfPayload];
-                final Map.Entry<byte[], Consumer<Double>> lastEntry = stack.pollLast();
-                assert lastEntry != null;
-                final byte[] incompleteBuffer = lastEntry.getKey();
-                final Consumer<Double> incompleteCallback = lastEntry.getValue();
-                final int sizeInPayload = incompleteBuffer.length - sizeOutOfPayload;
-                final int incompleteBufferOffset = writeMTU - sizeInPayload;
-                System.arraycopy(incompleteBuffer, 0, payload, incompleteBufferOffset, sizeInPayload);
-                System.arraycopy(incompleteBuffer, sizeInPayload, remainingBuffer, 0, sizeOutOfPayload);
-                this.pendingWriteRxCharacteristic.addFirst(new AbstractMap.SimpleImmutableEntry<>(remainingBuffer, incompleteCallback));
-                if (incompleteCallback != null) {
-                    lastNotifier = () -> incompleteCallback.accept(sizeInPayload / (double) incompleteBuffer.length);
-                }
-            } else {
-                payload = new byte [stackSize];
+            if (batchWriteType != null && next.writeType != batchWriteType) {
+                break;                                        // writeType incompatible : on arrête le batch, il reste en file
             }
-            int offset = 0;
-            final ArrayList<Runnable> notifiers = new ArrayList<>();
-            while (!stack.isEmpty()) {
-                final Map.Entry<byte[], Consumer<Double>> firstEntry = stack.poll();
-                assert firstEntry != null;
-                final byte [] buffer = firstEntry.getKey();
-                final Consumer<Double> completeCallback = firstEntry.getValue();
-                System.arraycopy(buffer, 0, payload, offset, buffer.length);
-                offset += buffer.length;
-                if (completeCallback != null) {
-                    notifiers.add(() -> completeCallback.accept(1d));
-                }
+            this.pendingWriteRxCharacteristic.pollFirst();     // confirmé compatible, on le retire pour de vrai
+            if (next.bytes.length == 0) {
+                continue;                                       // entrée vide, ignorée
             }
-            if (lastNotifier != null) {
-                notifiers.add(lastNotifier);
+            entries.add(next);
+            totalSize += next.bytes.length;
+            batchWriteType = next.writeType;
+        }
+        final int resolvedWriteType = batchWriteType != null ? batchWriteType : this.writeType;
+        return new Batch(entries, totalSize, resolvedWriteType);
+    }
+
+    private Runnable splitLastEntry(ConcurrentLinkedDeque<PendingWrite> stack, byte[] payload, int writeMTU, int sizeOutOfPayload) { // lorsque la dernière commande à inscrire dans le payload a une taille supérieure à la limite
+        final PendingWrite lastEntry = stack.pollLast();
+        if (lastEntry == null) {
+            throw new IllegalStateException("splitLastEntry called with an empty stack");
+        }
+        final byte[] command = lastEntry.bytes;
+        final Consumer<Double> progressCallback = lastEntry.progressCallback;
+        final int fittingSize = command.length - sizeOutOfPayload;    // partie de la commande qui rentre dans CE paquet
+        final int fittingOffset = writeMTU - fittingSize;               // où la coller dans payload (juste avant la fin)
+        final byte[] overflow = new byte[sizeOutOfPayload];             // partie qui déborde, pour le PROCHAIN paquet
+        System.arraycopy(command, 0, payload, fittingOffset, fittingSize);      // colle la partie qui rentre
+        System.arraycopy(command, fittingSize, overflow, 0, sizeOutOfPayload);  // sauvegarde la partie qui déborde
+        this.pendingWriteRxCharacteristic.addFirst(new PendingWrite(overflow, progressCallback, lastEntry.writeType)); // remise en tête de file
+        if (progressCallback == null) {
+            return null;
+        }
+        return () -> progressCallback.accept(fittingSize / (double) command.length); // progression partielle (ex: 0.75)
+    }
+
+    private List<Runnable> fillPayload(ConcurrentLinkedDeque<PendingWrite> entries, byte[] payload) {
+        int offset = 0;
+        final List<Runnable> notifiers = new ArrayList<>();
+        while (!entries.isEmpty()) {
+            final PendingWrite entry = entries.poll();
+            if (entry == null) {
+                throw new IllegalStateException("fillPayload called with an empty stack");
             }
-            /* No need to replace the previous mechanism.
-            sendPayload(payload, notifiers);
-            */
-            boolean rollback = false;
-            if (!this.flowControlCanSend.get()) {
-                rollback = true;
-                Log.e("unstackWriteRxCharacteristicLoop", String.format("Flow control not ready: %s", Utils.bytesToHexString(payload)));
-            } else if (!this.getRxCharacteristic().setValue(payload)) {
-                rollback = true;
-                Log.e("unstackWriteRxCharacteristicLoop", String.format("Could not update rx: %s", Utils.bytesToHexString(payload)));
-            } else {
-                this.getRxCharacteristic().setWriteType(writeType);
-                if (!this.gatt.writeCharacteristic(this.getRxCharacteristic())) {
-                    rollback = true;
-                    this.writeFailCount += 1;
-                    Log.e("unstackWriteRxCharacteristicLoop", String.format("Could not write rx: %s", Utils.bytesToHexString(payload)));
-                } else {
-                    for (final Runnable notifier: notifiers) notifier.run();
-                }
-            }
-            if (rollback) {
-                // If it fails to write a command n times,
-                // then we cancel rollback
-                // NB: 50 is arbitrary, this value may change
-                if (this.writeFailCount <= 50) {
-                    this.pendingWriteRxCharacteristic.addFirst(
-                            new AbstractMap.SimpleImmutableEntry<>(
-                                    payload,
-                                    p -> {
-                                        for (final Runnable notifier : notifiers) notifier.run();
-                                    }
-                            )
-                    );
-                    this.isWritingCommand.set(false);
-                    return false;
-                } else {
-                    this.writeFailCount = 0;
-                    this.isWritingCommand.set(false);
-                }
+            final byte[] command = entry.bytes;
+            final Consumer<Double> progressCallback = entry.progressCallback;
+            System.arraycopy(command, 0, payload, offset, command.length);   // colle cette commande à la suite
+            offset += command.length;                                        // avance le curseur pour la suivante
+            if (progressCallback != null) {
+                notifiers.add(() -> progressCallback.accept(1d));             // commande entière → 100%
             }
         }
-        return true;
+        return notifiers;
+    }
+    private PreparedPayload buildPayload(Batch batch, int writeMTU) { // construit le payload à partir d'un batch
+        final ConcurrentLinkedDeque<PendingWrite> entries = batch.entries;
+        final byte[] payload;
+        Runnable overflowNotifier = null;
+        if (batch.size > writeMTU) {
+            payload = new byte[writeMTU];
+            final int sizeOutOfPayload = batch.size - writeMTU;
+            overflowNotifier = this.splitLastEntry(entries, payload, writeMTU, sizeOutOfPayload);
+        } else {
+            payload = new byte[batch.size];
+        }
+        final List<Runnable> notifiers = this.fillPayload(entries, payload);
+        if (overflowNotifier != null) {
+            notifiers.add(overflowNotifier);
+        }
+        return new PreparedPayload(payload, notifiers);
+    }
+
+    private boolean writeToGatt(byte[] payload, int writeType, List<Runnable> notifiers) {
+        boolean rollback = false;
+        if (!this.flowControlCanSend.get()) {
+            rollback = true;
+            Log.e("unstackWriteRxCharacteristicLoop", String.format("Flow control not ready: %s", Utils.bytesToHexString(payload)));
+        } else if (!this.getRxCharacteristic().setValue(payload)) {
+            rollback = true;
+            Log.e("unstackWriteRxCharacteristicLoop", String.format("Could not update rx: %s", Utils.bytesToHexString(payload)));
+        } else {
+            this.getRxCharacteristic().setWriteType(writeType);
+            if (!this.gatt.writeCharacteristic(this.getRxCharacteristic())) {
+                rollback = true;
+                this.writeFailCount += 1;
+                Log.e("unstackWriteRxCharacteristicLoop", String.format("Could not write rx: %s", Utils.bytesToHexString(payload)));
+            } else {
+                for (final Runnable notifier: notifiers) notifier.run();
+            }
+        }
+        return rollback;
+    }
+
+    private boolean unstackWriteRxCharacteristicLoop() {
+        final boolean canWriteNow = this.flowControlCanSend.get() && this.pendingWriteRxCharacteristic.size() > 0;
+        if (!canWriteNow || !this.isWritingCommand.compareAndSet(false, true)) {
+            return true;                                        // rien à écrire maintenant, ou une écriture est déjà en cours
+        }
+        final int writeMTU = this.mtu - 3;
+        final Batch batch = this.collectBatch(writeMTU);
+        final PreparedPayload prepared = this.buildPayload(batch, writeMTU);
+        final boolean rollback = this.writeToGatt(prepared.payload, batch.writeType, prepared.notifiers);
+
+        if (!rollback) {
+            return true;                                          // écriture acceptée, rien à rejouer
+        }
+        return this.handleWriteFailure(prepared, batch.writeType);
+    }
+
+    private boolean handleWriteFailure(PreparedPayload prepared, int writeType) {
+        final boolean shouldRetry = this.writeFailCount <= 50;      // NB: 50 est arbitraire, cette valeur peut changer
+        if (shouldRetry) {
+            this.pendingWriteRxCharacteristic.addFirst(
+                    new PendingWrite(
+                            prepared.payload,
+                            p -> { for (final Runnable notifier : prepared.notifiers) notifier.run(); },
+                            writeType
+                    )
+            );
+        } else {
+            this.writeFailCount = 0;                                 // trop d'échecs consécutifs, on abandonne ce payload
+        }
+        this.isWritingCommand.set(false);
+        return !shouldRetry;
     }
 
     /* No need to do this for removing recursivity

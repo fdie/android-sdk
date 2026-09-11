@@ -32,7 +32,6 @@ import com.activelook.activelooksdk.types.FreeSpace;
 import com.activelook.activelooksdk.types.GaugeInfo;
 import com.activelook.activelooksdk.types.GlassesSettings;
 import com.activelook.activelooksdk.types.GlassesVersion;
-import com.activelook.activelooksdk.types.Image1bppData;
 import com.activelook.activelooksdk.types.ImageData;
 import com.activelook.activelooksdk.types.ImageInfo;
 import com.activelook.activelooksdk.types.ImgStreamFormat;
@@ -147,7 +146,7 @@ public interface Glasses extends Parcelable {
      *
      * @param on Turn on or off
      */
-    void isWriteWithResponse(boolean on);
+    void setWriteWithResponse(boolean on);
 
     /**
      * Load a configuration into the glasses.
@@ -178,6 +177,8 @@ public interface Glasses extends Parcelable {
      * Send demo command.
      * {@link Deprecated}
      */
+
+    void grayscale(byte level);
     void demo();
     /**
      * Send the firmware 4.0.0 demo command with parameter which was the test.
@@ -248,11 +249,20 @@ public interface Glasses extends Parcelable {
      */
     void als(boolean enable);
     /**
-     * Sets the grey level (0 to 15) used to draw the next graphical element.
-     *
+     * Sets the red-green color value (0 to 255) used to draw the next graphical element.
+     * Only available on color glasses (see {@link #isColorCapable()}).
+     * Sets the grey level (0 to 15) used to draw the next graphical element if not color glasses.
      * @param value The selected color.
      */
     void color(byte value);
+    /**
+     * Indicates whether the connected glasses have a color display (MDP08) rather than a
+     * grey-level one (MDP05), based on the Hardware Version String.
+     */
+    default boolean isColorCapable() {
+        final String hw = this.getDeviceInformation().getHardwareVersion();
+        return hw != null && hw.contains("MDP08");
+    }
     /**
      * Set a pixel on at the corresponding coordinates.
      *
@@ -381,6 +391,13 @@ public interface Glasses extends Parcelable {
      * @param img  The image to store in the configuration .
      */
     void imgSave4bppHeatShrinkSaveComp(byte id, Bitmap img);
+    /**
+     * Save image data in the chosen format.
+     * @param id      The image id in the configuration.
+     * @param imgData The pre-encoded image data to store in the configuration.
+     * @param format  The image format.
+     */
+    void imgSave(byte id, ImageData imgData, ImgSaveFormat format);
     /**
      * Display image id to the corresponding coordinates.
      *

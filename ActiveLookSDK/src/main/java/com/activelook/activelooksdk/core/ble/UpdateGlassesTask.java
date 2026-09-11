@@ -7,12 +7,10 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.Context;
-import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.core.util.Consumer;
 import androidx.core.util.Pair;
-import androidx.core.util.Predicate;
 
 import com.activelook.activelooksdk.DiscoveredGlasses;
 import com.activelook.activelooksdk.Glasses;
@@ -185,7 +183,7 @@ class UpdateGlassesTask {
     }
 
     private void onApiFail(final VolleyError error) {
-        error.printStackTrace();
+        Log.e("onApiFail","Error"+ error.getMessage());
         if (error.networkResponse != null && error.networkResponse.statusCode == HttpURLConnection.HTTP_FORBIDDEN) {
             this.onUpdateError(this.progress.withStatus(GlassesUpdate.State.ERROR_UPDATE_FORBIDDEN));
             this.onConnectionFail.accept(this.discoveredGlasses);
@@ -196,7 +194,7 @@ class UpdateGlassesTask {
 
     private void onApiJSONException(final JSONException error) {
         if (error != null) {
-            error.printStackTrace();
+            Log.e("onApiJSONException","Error"+ error.getMessage());
         }
         this.onUpdateError(this.progress.withStatus(GlassesUpdate.State.ERROR_UPDATE_FAIL));
         if (this.gVersion.getMajor() < FW_COMPAT) {
@@ -219,6 +217,45 @@ class UpdateGlassesTask {
         this.onConnectionFail.accept(this.discoveredGlasses);
     }
 
+    private void startUpdate(String strVersion){
+        final String latestApiPath = String.format("/firmwares/%s/%s/%s", this.glasses.getDeviceInformation().getHardwareVersion(), this.token, strVersion);
+        final int bl0 = this.glasses.getDeviceInformation().getBatteryLevel();
+        if (bl0 < 10) { // if battery low , waits until the battery is high enough to resume
+            this.onUpdateError(this.progress.withBatteryLevel(bl0).withStatus(GlassesUpdate.State.ERROR_UPDATE_FAIL_LOW_BATTERY));
+            final Runnable resume = () -> this.resumeOnFirmwareHistoryResponse(latestApiPath);
+            this.glasses.subscribeToBatteryLevelNotifications(bl -> this.onBatteryLevelNotification(resume, bl));
+        } else {
+            this.resumeOnFirmwareHistoryResponse(latestApiPath);
+        }
+    }
+
+    private void noUpdateAvailable(){
+        Log.d("FW_LATEST", "No firmware update available");
+        this.glasses.subscribeToFlowControlNotifications(fc -> {
+            this.glasses.unsubscribeToFlowControlNotifications();
+            this.glasses.cfgRead("ALooK", info -> {
+                final String gStrVersion = String.format("%d.%d.%d", this.gVersion.getMajor(), this.gVersion.getMinor(), this.gVersion.getPatch());
+
+                final String cfgHistoryURL = String.format("%s/configurations/%s/%s?compatibility=%d&max-version=%s",
+                        BASE_URL, this.glasses.getDeviceInformation().getHardwareVersion(), this.token, FW_COMPAT, gStrVersion);
+
+                this.requestQueue.add(new JsonObjectRequest(
+                        Request.Method.GET,
+                        cfgHistoryURL,
+                        null,
+                        r -> this.onConfigurationHistoryResponse(r, info),
+                        this::onApiFail
+                ));
+            });
+        });
+        final byte [] fcError = new byte [532];
+        fcError[0] = (byte) 0xFF;
+        this.glasses.writeBytes(fcError);
+    }
+
+    private boolean isUpdateAvailable(int major,int minor,int patch){
+        return (major > this.gVersion.getMajor() || (major == this.gVersion.getMajor() && minor >  this.gVersion.getMinor())  || (major == this.gVersion.getMajor() && minor == this.gVersion.getMinor() && patch > this.gVersion.getPatch()));
+    }
     void onFirmwareHistoryResponse(final JSONObject jsonObject) {
         try {
             final JSONObject latest = jsonObject.getJSONObject("latest");
@@ -229,42 +266,10 @@ class UpdateGlassesTask {
             final int patch = lVersion.getInt(2);
             final String strVersion = String.format("%d.%d.%d", major, minor, patch);
             this.progress = this.progress.withTargetFirmwareVersion(strVersion);
-            if (
-                    major > this.gVersion.getMajor()
-                            || (major == this.gVersion.getMajor() && minor >  this.gVersion.getMinor())
-                            || (major == this.gVersion.getMajor() && minor == this.gVersion.getMinor() && patch > this.gVersion.getPatch())
-            ) {
-                final String latestApiPath = String.format("/firmwares/%s/%s/%s", this.glasses.getDeviceInformation().getHardwareVersion(), this.token, strVersion);
-                final int bl0 = this.glasses.getDeviceInformation().getBatteryLevel();
-                if (bl0 < 10) {
-                    this.onUpdateError(this.progress.withBatteryLevel(bl0).withStatus(GlassesUpdate.State.ERROR_UPDATE_FAIL_LOW_BATTERY));
-                    final Runnable resume = () -> this.resumeOnFirmwareHistoryResponse(latestApiPath);
-                    this.glasses.subscribeToBatteryLevelNotifications(bl -> this.onBatteryLevelNotification(resume, bl));
-                } else {
-                    this.resumeOnFirmwareHistoryResponse(latestApiPath);
-                }
+            if (isUpdateAvailable(major,minor,patch)) {
+                startUpdate(strVersion);
             } else {
-                Log.d("FW_LATEST", "No firmware update available");
-                this.glasses.subscribeToFlowControlNotifications(fc -> {
-                    this.glasses.unsubscribeToFlowControlNotifications();
-                    this.glasses.cfgRead("ALooK", info -> {
-                        final String gStrVersion = String.format("%d.%d.%d", this.gVersion.getMajor(), this.gVersion.getMinor(), this.gVersion.getPatch());
-
-                        final String cfgHistoryURL = String.format("%s/configurations/%s/%s?compatibility=%d&max-version=%s",
-                                BASE_URL, this.glasses.getDeviceInformation().getHardwareVersion(), this.token, FW_COMPAT, gStrVersion);
-
-                        this.requestQueue.add(new JsonObjectRequest(
-                                Request.Method.GET,
-                                cfgHistoryURL,
-                                null,
-                                r -> this.onConfigurationHistoryResponse(r, info),
-                                this::onApiFail
-                        ));
-                    });
-                });
-                final byte [] fcError = new byte [532];
-                fcError[0] = (byte) 0xFF;
-                this.glasses.writeBytes(fcError);
+                noUpdateAvailable();
             }
         } catch (final JSONException e) {
             this.onApiJSONException(e);

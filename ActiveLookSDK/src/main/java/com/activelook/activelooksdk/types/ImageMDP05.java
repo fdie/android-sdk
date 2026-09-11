@@ -15,10 +15,13 @@ public class ImageMDP05 {
 
         int[][] encodedImg = new int[height][width];
 
+        int[] pixels = new int[width * height];
+        img.getPixels(pixels, 0, width, 0, 0, width, height); // modifier pour récupérer les pixels en batch plutôt qu'un par un
+
         //reduce to 4bpp
         for (int y=0; y < height; y++){
             for (int x=0; x < width; x++){
-                int pxl =  rgbTo8bitGrayWeightedConvertion(img.getPixel(x,y));
+                int pxl =  rgbTo8bitGrayWeightedConvertion(pixels[y * width + x]);
                 //convert gray8bit to gray4bit
                 encodedImg[y][x] =  Math.round(pxl/16);
             }
@@ -35,11 +38,15 @@ public class ImageMDP05 {
 
         int[][] encodedImg = new int[height][width];
 
-        //reduce to 1 bpp
+        int[] pixels = new int[width * height];
+        img.getPixels(pixels, 0, width, 0, 0, width, height); // modifier pour récupérer les pixels en batch plutôt qu'un par un
+
+
+         //reduce to 1 bpp
         for (int y=0; y < height; y++){
             for (int x=0; x < width; x++){
                 //convert gray8bit in gray1bit
-                if (rgbTo8bitGrayWeightedConvertion(img.getPixel(x,y)) > 0){
+                if ((rgbTo8bitGrayWeightedConvertion(pixels[y * width + x])) > 0){
                     encodedImg[y][x] = 1;
                 }else{
                     encodedImg[y][x] = 0;
