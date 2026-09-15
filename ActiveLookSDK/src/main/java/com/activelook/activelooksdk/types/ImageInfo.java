@@ -19,12 +19,12 @@ import java.util.List;
 
 public class ImageInfo {
 
-    private final byte id;
+    private final int id;
     private final int width;
     private final int height;
 
     public ImageInfo(byte id, int width, int height) {
-        this.id = id;
+        this.id = id & 0xFF;
         this.width = width;
         this.height = height;
     }
